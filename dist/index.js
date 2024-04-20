@@ -78076,6 +78076,7 @@ var require_downloadUtils = __commonJS({
           yield fdesc.sync();
           progressLogger = new DownloadProgress(fileSize);
           progressLogger.startDisplayTimer();
+          core.info(`Downloading ${archivePath}`);
           const chunkSize = Math.ceil(fileSize / CONCURRENCY);
           const chunkRanges = [];
           for (let i = 0; i < CONCURRENCY; i++) {
@@ -78099,9 +78100,16 @@ var require_downloadUtils = __commonJS({
             core.debug(`Finished downloading range: ${range}`);
           }));
           yield Promise.all(downloads);
+        } catch (err) {
+          core.warning(`Failed to download cache: ${err}`);
+          throw err;
         } finally {
-          yield fdesc.close();
           progressLogger === null || progressLogger === void 0 ? void 0 : progressLogger.stopDisplayTimer();
+          try {
+            yield fdesc.close();
+          } catch (err) {
+            core.warning(`Failed to close file descriptor: ${err}`);
+          }
         }
       });
     }
@@ -78485,7 +78493,6 @@ var require_cacheHttpClient = __commonJS({
     __name(getRequestOptions, "getRequestOptions");
     function createHttpClient() {
       const token = process.env["BLACKSMITH_CACHE_TOKEN"];
-      core.debug(`BLACKSMITH_CACHE_TOKEN: ${token}`);
       const bearerCredentialHandler = new auth_1.BearerCredentialHandler(token !== null && token !== void 0 ? token : "");
       return new http_client_1.HttpClient("useblacksmith/cache", [bearerCredentialHandler], getRequestOptions());
     }
@@ -79108,11 +79115,17 @@ var require_cache2 = __commonJS({
           if (typedError.name === ValidationError.name) {
             throw error;
           } else {
-            core.warning(`Failed to restore: ${error.message}`);
+            if (error.message.includes(`Cache service responded with 404`)) {
+              core.info(`Did not get a cache hit; proceeding as an uncached run`);
+            } else {
+              core.warning(`Failed to restore: ${error.message}`);
+            }
           }
         } finally {
           try {
-            yield utils.unlinkFile(archivePath);
+            const before = Date.now();
+            yield unlinkWithTimeout(archivePath, 5e3);
+            core.info(`cleaning up archive took ${Date.now() - before}ms`);
           } catch (error) {
             core.debug(`Failed to delete archive: ${error}`);
           }
@@ -79122,6 +79135,26 @@ var require_cache2 = __commonJS({
     }
     __name(restoreCache, "restoreCache");
     exports2.restoreCache = restoreCache;
+    function unlinkWithTimeout(path3, timeoutMs) {
+      return __awaiter2(this, void 0, void 0, function* () {
+        const timeout = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error("Unlink operation timed out"));
+          }, timeoutMs);
+        });
+        try {
+          yield Promise.race([utils.unlinkFile(path3), timeout]);
+        } catch (error) {
+          if (error.message === "Unlink operation timed out") {
+            core.warning(`Unlink operation exceeded the timeout of ${timeoutMs}ms`);
+          } else {
+            core.debug(`Failed to delete archive: ${error}`);
+          }
+          throw error;
+        }
+      });
+    }
+    __name(unlinkWithTimeout, "unlinkWithTimeout");
     function saveCache(paths, key, options, enableCrossOsArchive = false) {
       var _a, _b, _c, _d, _e, _f, _g, _h, _j;
       return __awaiter2(this, void 0, void 0, function* () {
