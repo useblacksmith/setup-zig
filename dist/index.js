@@ -83499,7 +83499,7 @@ var require_downloadUtils = __commonJS({
           progress = new DownloadProgress(length);
           progress.startDisplayTimer();
           const downloads = [];
-          const blockSize = 3 * 1024 * 1024;
+          const blockSize = 2 * 1024 * 1024;
           for (let offset = 0; offset < length; offset += blockSize) {
             const count = Math.min(blockSize, length - offset);
             downloads.push({
@@ -83529,7 +83529,7 @@ var require_downloadUtils = __commonJS({
           while (nextDownload = downloads.pop()) {
             activeDownloads[nextDownload.offset] = nextDownload.promiseGetter();
             actives++;
-            if (actives >= ((_a = options.downloadConcurrency) !== null && _a !== void 0 ? _a : 10)) {
+            if (actives >= ((_a = options.downloadConcurrency) !== null && _a !== void 0 ? _a : 12)) {
               yield waitAndWrite();
             }
           }
@@ -83550,11 +83550,11 @@ var require_downloadUtils = __commonJS({
     exports2.downloadCacheHttpClientConcurrent = downloadCacheHttpClientConcurrent;
     function downloadSegmentRetry(httpClient, archiveLocation, offset, count) {
       return __awaiter2(this, void 0, void 0, function* () {
-        const retries = 3;
+        const retries = 5;
         let failures = 0;
         while (true) {
           try {
-            const timeout = 1e4;
+            const timeout = 15e3;
             const result = yield promiseWithTimeout(timeout, downloadSegment(httpClient, archiveLocation, offset, count));
             if (typeof result === "string") {
               throw new Error("downloadSegmentRetry failed due to timeout");
@@ -83565,7 +83565,7 @@ var require_downloadUtils = __commonJS({
               throw err;
             }
             failures++;
-            yield new Promise((resolve) => setTimeout(resolve, Math.random() * 1e3));
+            yield new Promise((resolve) => setTimeout(resolve, Math.random() * 300));
             core.info(`Retrying download segment ${offset} of ${count} (${failures} of ${retries})`);
           }
         }
@@ -84458,8 +84458,11 @@ var require_cache2 = __commonJS({
       return __awaiter2(this, void 0, void 0, function* () {
         try {
           core.info("Reporting failure to api.blacksmith.sh");
+          const message = `${process.env.GITHUB_JOB} failed for ${process.env.GITHUB_REPOSITORY} with run ID: ${process.env.GITHUB_RUN_ID}; Sender: ${process.env.GITHUB_TRIGGERING_ACTOR}`;
           const httpClient = (0, cacheHttpClient_1.createHttpClient)();
-          yield promiseWithTimeout(1e4, httpClient.postJson((0, cacheHttpClient_1.getCacheApiUrl)("report-failed"), {}));
+          yield promiseWithTimeout(1e4, httpClient.postJson((0, cacheHttpClient_1.getCacheApiUrl)("report-failed"), {
+            message
+          }));
         } catch (error) {
           core.warning("Failed to report failure to api.blacksmith.sh");
         }
