@@ -27,7 +27,7 @@ jobs:
         with:
           payload: |
             {
-              "text": "Updated setup-ruby v3 and v3.0.1 tags to the latest commit on default"
+              "text": "Updated setup-zig v3 and v3.0.1 tags to the latest commit on default"
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.CACHE_SLACK_WEBHOOK_URL }}
