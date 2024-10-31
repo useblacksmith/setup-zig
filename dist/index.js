@@ -26071,6 +26071,7 @@ __export(tslib_es6_exports, {
   __propKey: () => __propKey,
   __read: () => __read,
   __rest: () => __rest,
+  __rewriteRelativeImportExtension: () => __rewriteRelativeImportExtension,
   __runInitializers: () => __runInitializers,
   __setFunctionName: () => __setFunctionName,
   __spread: () => __spread,
@@ -26553,6 +26554,14 @@ function __disposeResources(env) {
   __name(next, "next");
   return next();
 }
+function __rewriteRelativeImportExtension(path2, preserveJsx) {
+  if (typeof path2 === "string" && /^\.\.?\//.test(path2)) {
+    return path2.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function(m, tsx, d, ext, cm) {
+      return tsx ? preserveJsx ? ".jsx" : ".js" : d && (!ext || !cm) ? m : d + ext + "." + cm.toLowerCase() + "js";
+    });
+  }
+  return path2;
+}
 var extendStatics, __assign, __createBinding, __setModuleDefault, _SuppressedError, tslib_es6_default;
 var init_tslib_es6 = __esm({
   "node_modules/tslib/tslib.es6.mjs"() {
@@ -26631,12 +26640,17 @@ var init_tslib_es6 = __esm({
       return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
     };
     __name(__disposeResources, "__disposeResources");
+    __name(__rewriteRelativeImportExtension, "__rewriteRelativeImportExtension");
     tslib_es6_default = {
       __extends,
       __assign,
       __rest,
       __decorate,
       __param,
+      __esDecorate,
+      __runInitializers,
+      __propKey,
+      __setFunctionName,
       __metadata,
       __awaiter,
       __generator,
@@ -26658,7 +26672,8 @@ var init_tslib_es6 = __esm({
       __classPrivateFieldSet,
       __classPrivateFieldIn,
       __addDisposableResource,
-      __disposeResources
+      __disposeResources,
+      __rewriteRelativeImportExtension
     };
   }
 });
@@ -31559,7 +31574,17 @@ var require_tokenCredential = __commonJS({
   "node_modules/@azure/core-auth/dist/commonjs/tokenCredential.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.isBearerToken = isBearerToken;
+    exports2.isPopToken = isPopToken;
     exports2.isTokenCredential = isTokenCredential;
+    function isBearerToken(accessToken) {
+      return !accessToken.tokenType || accessToken.tokenType === "Bearer";
+    }
+    __name(isBearerToken, "isBearerToken");
+    function isPopToken(accessToken) {
+      return accessToken.tokenType === "pop";
+    }
+    __name(isPopToken, "isPopToken");
     function isTokenCredential(credential) {
       const castCredential = credential;
       return castCredential && typeof castCredential.getToken === "function" && (castCredential.signRequest === void 0 || castCredential.getToken.length > 0);
@@ -70727,7 +70752,7 @@ var require_form_data = __commonJS({
       if (typeof value == "number") {
         value = "" + value;
       }
-      if (util.isArray(value)) {
+      if (Array.isArray(value)) {
         this._error(new Error("Arrays are not supported."));
         return;
       }
@@ -75655,11 +75680,8 @@ var require_cacheHttpClient = __commonJS({
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
     };
-    var __importDefault2 = exports2 && exports2.__importDefault || function(mod) {
-      return mod && mod.__esModule ? mod : { "default": mod };
-    };
     Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.saveCache = exports2.reserveCache = exports2.downloadCache = exports2.getCacheEntry = exports2.getCacheVersion = exports2.createHttpClient = exports2.getCacheApiUrl = void 0;
+    exports2.saveCache = exports2.reserveCache = exports2.downloadCache = exports2.getCacheEntry = exports2.getCacheEntryUsingCacheMgr = exports2.downloadBlobUsingCacheMgr = exports2.waitForArchiveToBeAvailable = exports2.mountSharedNFSVolume = exports2.getCacheVersion = exports2.createHttpClient = exports2.getCacheApiUrl = void 0;
     var core = __importStar2(require_core());
     var http_client_1 = require_lib();
     var auth_1 = require_auth();
@@ -75670,7 +75692,8 @@ var require_cacheHttpClient = __commonJS({
     var downloadUtils_1 = require_downloadUtils();
     var options_1 = require_options();
     var requestUtils_1 = require_requestUtils();
-    var axios_1 = __importDefault2(require_axios());
+    var axios_1 = __importStar2(require_axios());
+    var child_process_1 = require("child_process");
     var versionSalt = "1.0";
     function getCacheApiUrl(resource) {
       var _a, _b;
@@ -75721,11 +75744,143 @@ var require_cacheHttpClient = __commonJS({
     }
     __name(getCacheVersion, "getCacheVersion");
     exports2.getCacheVersion = getCacheVersion;
+    function mountSharedNFSVolume() {
+      return __awaiter2(this, void 0, void 0, function* () {
+        const mountPoint = "/home/runner/blacksmith";
+        if (!fs.existsSync(mountPoint)) {
+          fs.mkdirSync(mountPoint, { recursive: true });
+        }
+        const mountCommand = `sudo mount -t nfs -o nconnect=16 192.168.127.1:/blacksmith/cache ${mountPoint}`;
+        try {
+          (0, child_process_1.execSync)(mountCommand);
+          core.info(`NFS volume mounted successfully at ${mountPoint}`);
+        } catch (error) {
+          core.error(`Failed to mount NFS volume: ${error}`);
+          throw error;
+        }
+      });
+    }
+    __name(mountSharedNFSVolume, "mountSharedNFSVolume");
+    exports2.mountSharedNFSVolume = mountSharedNFSVolume;
+    function waitForArchiveToBeAvailable(cacheId) {
+      return __awaiter2(this, void 0, void 0, function* () {
+        const cacheFilePath = `/home/runner/blacksmith/${cacheId}`;
+        const doneFilePath = `${cacheFilePath}_done`;
+        const startTime = Date.now();
+        const timeoutMs = 2 * 60 * 1e3;
+        while (!fs.existsSync(doneFilePath)) {
+          if (Date.now() - startTime > timeoutMs) {
+            throw new Error(`Timeout waiting for ${doneFilePath} to appear`);
+          }
+          yield new Promise((resolve) => setTimeout(resolve, 1e3));
+        }
+      });
+    }
+    __name(waitForArchiveToBeAvailable, "waitForArchiveToBeAvailable");
+    exports2.waitForArchiveToBeAvailable = waitForArchiveToBeAvailable;
+    function downloadBlobUsingCacheMgr(cacheId) {
+      return __awaiter2(this, void 0, void 0, function* () {
+        const archiveDir = "/home/runner/blacksmith";
+        if (!fs.existsSync(archiveDir)) {
+          fs.mkdirSync(archiveDir, { recursive: true });
+        }
+        const archivePath = `${archiveDir}/${cacheId}`;
+        fs.writeFileSync(archivePath, "");
+        const cacheManagerEndpoint = `http://192.168.127.1:5555/cache/${cacheId}/download`;
+        try {
+          const before = Date.now();
+          core.info(`Transferring blob from the host into the VM to ${archivePath}`);
+          const response = yield (0, axios_1.default)({
+            method: "get",
+            url: cacheManagerEndpoint,
+            responseType: "stream"
+          });
+          const writer = fs.createWriteStream(archivePath);
+          response.data.pipe(writer);
+          return new Promise((resolve, reject) => {
+            writer.on("finish", () => {
+              const duration = (Date.now() - before) / 1e3;
+              const fileSizeInBytes = fs.statSync(archivePath).size;
+              const speedMBps = fileSizeInBytes / (1024 * 1024) / duration;
+              core.info(`Blob transfer completed in ${duration.toFixed(2)}s (${speedMBps.toFixed(2)} MB/s)`);
+              resolve();
+            });
+            writer.on("error", reject);
+          });
+        } catch (error) {
+          throw new Error(`Failed to download cache blob: ${error.message}`);
+        }
+      });
+    }
+    __name(downloadBlobUsingCacheMgr, "downloadBlobUsingCacheMgr");
+    exports2.downloadBlobUsingCacheMgr = downloadBlobUsingCacheMgr;
+    function getCacheEntryUsingCacheMgr(keys, paths, destinationPath, options) {
+      var _a;
+      return __awaiter2(this, void 0, void 0, function* () {
+        const version = getCacheVersion(paths, options === null || options === void 0 ? void 0 : options.compressionMethod, options === null || options === void 0 ? void 0 : options.enableCrossOsArchive);
+        const cacheManagerEndpoint = "http://192.168.127.1:5555/cache";
+        const formData = new URLSearchParams({
+          keys: keys.join(","),
+          version,
+          destinationPath
+        });
+        let response;
+        try {
+          response = yield axios_1.default.post(cacheManagerEndpoint, formData, {
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              Authorization: `Bearer ${process.env["BLACKSMITH_CACHE_TOKEN"]}`,
+              "X-Github-Repo-Name": process.env["GITHUB_REPO_NAME"] || ""
+            },
+            timeout: 1e4
+            // 10 seconds timeout
+          });
+        } catch (error) {
+          if ((0, axios_1.isAxiosError)(error) && ((_a = error.response) === null || _a === void 0 ? void 0 : _a.status) === 404) {
+            return void 0;
+          }
+          throw error;
+        }
+        if (response.status !== 200) {
+          throw new Error(`Cache service responded with ${response.status}`);
+        }
+        const result = response.data;
+        if (result.restoreStatus === "miss") {
+          return void 0;
+        }
+        if (result.restoreStatus === "done") {
+          core.info(`Blob found in cache manager; proceeding to direct transfer`);
+          return result;
+        }
+        if (result.restoreStatus === "in_progress") {
+          const startTime = Date.now();
+          const maxWaitTime = 5 * 60 * 1e3;
+          while (Date.now() - startTime < maxWaitTime) {
+            yield new Promise((resolve) => setTimeout(resolve, 1e3));
+            response = yield axios_1.default.get(`${cacheManagerEndpoint}/${result.cacheId}`);
+            const status = response.data.status;
+            if (status === "done") {
+              return result;
+            }
+            if (status === "failed") {
+              core.warning(`Cache restore failed`);
+              return void 0;
+            }
+          }
+          core.warning(`Cache restore timed out after 5 minutes`);
+          return void 0;
+        }
+        return result;
+      });
+    }
+    __name(getCacheEntryUsingCacheMgr, "getCacheEntryUsingCacheMgr");
+    exports2.getCacheEntryUsingCacheMgr = getCacheEntryUsingCacheMgr;
     function getCacheEntry(keys, paths, options) {
+      var _a;
       return __awaiter2(this, void 0, void 0, function* () {
         const version = getCacheVersion(paths, options === null || options === void 0 ? void 0 : options.compressionMethod, options === null || options === void 0 ? void 0 : options.enableCrossOsArchive);
         const resource = `?keys=${encodeURIComponent(keys.join(","))}&version=${version}`;
-        const maxRetries = 2;
+        const maxRetries = 3;
         let retries = 0;
         core.info(`Checking cache for keys ${keys.join(",")} and version ${version}`);
         while (retries <= maxRetries) {
@@ -75735,10 +75890,11 @@ var require_cacheHttpClient = __commonJS({
               headers: {
                 Accept: createAcceptHeader("application/json", "6.0-preview.1"),
                 "X-Github-Repo-Name": process.env["GITHUB_REPO_NAME"],
-                Authorization: `Bearer ${process.env["BLACKSMITH_CACHE_TOKEN"]}`
+                Authorization: `Bearer ${process.env["BLACKSMITH_CACHE_TOKEN"]}`,
+                "X-Cache-Region": (_a = process.env["BLACKSMITH_REGION"]) !== null && _a !== void 0 ? _a : "eu-central"
               },
-              timeout: 1e4
-              // 10 seconds timeout
+              timeout: 3e3
+              // 3 seconds timeout
             });
             core.debug(`Cache lookup took ${Date.now() - before}ms`);
             if (response.status === 204) {
@@ -75760,15 +75916,21 @@ var require_cacheHttpClient = __commonJS({
             core.debug(JSON.stringify(cacheResult));
             return cacheResult;
           } catch (error) {
-            if (error.response && error.response.status >= 500 && retries < maxRetries) {
+            if (error.response && error.response.status >= 500 || error.code === "ECONNABORTED") {
               retries++;
-              core.warning(`Retrying due to server error (attempt ${retries} of ${maxRetries})`);
-              continue;
+              if (retries <= maxRetries) {
+                if (error.code === "ECONNABORTED") {
+                  core.warning(`Request timed out. Retrying (attempt ${retries} of ${maxRetries})`);
+                } else {
+                  core.warning(`Retrying due to error: ${error.message} (attempt ${retries} of ${maxRetries})`);
+                }
+                continue;
+              }
             }
             if (error.response) {
               throw new Error(`Cache service responded with ${error.response.status}`);
             } else if (error.code === "ECONNABORTED") {
-              throw new Error("Request timed out after 10 seconds");
+              throw new Error("Request timed out after 3 seconds");
             } else {
               throw error;
             }
@@ -75828,7 +75990,10 @@ Other caches with similar key:`);
           cacheSize: options === null || options === void 0 ? void 0 : options.cacheSize
         };
         const response = yield (0, requestUtils_1.retryTypedResponse)("reserveCache", () => __awaiter2(this, void 0, void 0, function* () {
-          return httpClient.postJson(getCacheApiUrl("caches"), reserveCacheRequest);
+          var _a;
+          return httpClient.postJson(getCacheApiUrl("caches"), reserveCacheRequest, {
+            "X-Cache-Region": (_a = process.env["BLACKSMITH_REGION"]) !== null && _a !== void 0 ? _a : "eu-central"
+          });
         }));
         return response;
       });
@@ -76344,6 +76509,7 @@ var require_cache2 = __commonJS({
     }
     __name(reportFailure, "reportFailure");
     function restoreCache(paths, primaryKey, restoreKeys, options, enableCrossOsArchive = false) {
+      var _a, _b, _c, _d;
       return __awaiter2(this, void 0, void 0, function* () {
         checkPaths(paths);
         restoreKeys = restoreKeys || [];
@@ -76357,40 +76523,64 @@ var require_cache2 = __commonJS({
           checkKey(key);
         }
         const compressionMethod = yield utils.getCompressionMethod();
-        let archivePath = "";
+        let archivePath = path2.join(yield utils.createTempDirectory(), utils.getCacheFileName(compressionMethod));
+        core.debug(`Archive Path: ${archivePath}`);
+        const useCacheManager = false;
+        let cacheEntry = null;
+        let cacheKey = void 0;
         try {
-          const cacheEntry = yield cacheHttpClient.getCacheEntry(keys, paths, {
-            compressionMethod,
-            enableCrossOsArchive
-          });
-          if (!(cacheEntry === null || cacheEntry === void 0 ? void 0 : cacheEntry.archiveLocation)) {
-            return void 0;
+          if (useCacheManager) {
+            const cacheEntry2 = yield cacheHttpClient.getCacheEntryUsingCacheMgr(keys, paths, archivePath, {
+              compressionMethod,
+              enableCrossOsArchive
+            });
+            if (!cacheEntry2) {
+              core.info("Did not get a cache hit; proceeding as an uncached run");
+              return void 0;
+            }
+            archivePath = path2.join("/home/runner/blacksmith", cacheEntry2.cacheId);
+            yield cacheHttpClient.mountSharedNFSVolume();
+            yield cacheHttpClient.waitForArchiveToBeAvailable(cacheEntry2.cacheId);
+            cacheKey = cacheEntry2.cacheKey;
+          } else {
+            cacheEntry = yield cacheHttpClient.getCacheEntry(keys, paths, {
+              compressionMethod,
+              enableCrossOsArchive
+            });
+            if (!(cacheEntry === null || cacheEntry === void 0 ? void 0 : cacheEntry.archiveLocation)) {
+              return void 0;
+            }
+            cacheKey = cacheEntry.cacheKey;
+            if (options === null || options === void 0 ? void 0 : options.lookupOnly) {
+              core.info("Lookup only - skipping download");
+              return cacheEntry.cacheKey;
+            }
+            yield cacheHttpClient.downloadCache(cacheEntry.archiveLocation, archivePath, options);
           }
-          if (options === null || options === void 0 ? void 0 : options.lookupOnly) {
-            core.info("Lookup only - skipping download");
-            return cacheEntry.cacheKey;
-          }
-          archivePath = path2.join(yield utils.createTempDirectory(), utils.getCacheFileName(compressionMethod));
-          core.debug(`Archive Path: ${archivePath}`);
-          yield cacheHttpClient.downloadCache(cacheEntry.archiveLocation, archivePath, options);
           if (core.isDebug()) {
             yield (0, tar_1.listTar)(archivePath, compressionMethod);
           }
           const archiveFileSize = utils.getArchiveFileSizeInBytes(archivePath);
           core.info(`Cache Size: ~${Math.round(archiveFileSize / (1024 * 1024))} MB (${archiveFileSize} B)`);
+          const extractStartTime = Date.now();
           yield (0, tar_1.extractTar)(archivePath, compressionMethod);
+          const extractEndTime = Date.now();
+          const extractionTimeSeconds = (extractEndTime - extractStartTime) / 1e3;
+          core.info(`Cache extraction completed in ${extractionTimeSeconds.toFixed(2)} seconds`);
           core.info("Cache restored successfully");
-          return cacheEntry.cacheKey;
+          return cacheKey;
         } catch (error) {
           const typedError = error;
           if (typedError.name === ValidationError.name) {
             throw error;
           } else {
-            if (error.message.includes(`Cache service responded with 404`)) {
+            if ((_a = typedError.message) === null || _a === void 0 ? void 0 : _a.includes(`Cache service responded with 404`)) {
               core.info(`Did not get a cache hit; proceeding as an uncached run`);
             } else {
-              core.warning(`Failed to restore: ${error.message}`);
-              yield reportFailure();
+              core.warning(`Failed to restore: ${typedError.message}`);
+              if (!((_b = typedError.message) === null || _b === void 0 ? void 0 : _b.includes("File exists")) && !((_c = typedError.message) === null || _c === void 0 ? void 0 : _c.includes("Operation not permitted")) && !((_d = typedError.message) === null || _d === void 0 ? void 0 : _d.includes("failed with exit code 2"))) {
+                yield reportFailure();
+              }
             }
           }
         } finally {
